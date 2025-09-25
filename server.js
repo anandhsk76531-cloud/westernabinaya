@@ -205,15 +205,31 @@ app.post("/api/bookings", async (req, res) => {
     });
   }
 
+  // Convert 12-hour time to 24-hour format
+  function convertTo24Hour(timeStr) {
+    const [timePart, modifier] = timeStr.split(' ');
+    let [hours, minutes] = timePart.split(':').map(Number);
+
+    if (modifier.toUpperCase() === 'PM' && hours < 12) hours += 12;
+    if (modifier.toUpperCase() === 'AM' && hours === 12) hours = 0;
+
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`;
+  }
+
+  const formattedTime = convertTo24Hour(time);
+
   try {
+    // Get user ID
     const [user] = await pool.query("SELECT id FROM users WHERE email = ?", [email]);
     if (user.length === 0) {
       return res.status(400).json({ success: false, message: "User not found" });
     }
     const userId = user[0].id;
+
+    // Check for existing booking at same date & time
     const [existing] = await pool.query(
       "SELECT id FROM bookings WHERE event_date = ? AND event_time = ?",
-      [date, time]
+      [date, formattedTime]
     );
 
     if (existing.length > 0) {
@@ -222,6 +238,8 @@ app.post("/api/bookings", async (req, res) => {
         message: "Sorry, the event is already booked. Please contact the admin at 9344016076"
       });
     }
+
+    // Insert booking
     const [result] = await pool.query(
       `INSERT INTO bookings 
       (user_id, category, services, total_members, food_items, event_date, event_time, location, total, booking_status, payment_status)
@@ -233,7 +251,7 @@ app.post("/api/bookings", async (req, res) => {
         total_members || 0,
         JSON.stringify(food_items || []),
         date,
-        time,
+        formattedTime,
         location,
         total || 0,
         "pending",
@@ -246,6 +264,7 @@ app.post("/api/bookings", async (req, res) => {
       message: "Booking created successfully",
       bookingId: result.insertId
     });
+
   } catch (err) {
     console.error("Booking Error:", err);
     res.status(500).json({ success: false, message: "Server error" });
@@ -737,3 +756,4 @@ app.put("/api/admin/users/block/:id", async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
