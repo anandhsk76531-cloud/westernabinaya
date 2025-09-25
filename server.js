@@ -320,27 +320,55 @@ app.put("/api/profile/:email", async (req, res) => {
 
 app.get('/api/bookings/:email', async (req, res) => {
   const email = req.params.email;
-
   try {
-    // Step 1: Find user ID
+    // Step 1: Find the user ID using the email
     const [users] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
     if (users.length === 0) {
+      // User not found for given email
       return res.status(404).json({ message: 'User not found' });
     }
     const userId = users[0].id;
 
-    // Step 2: Fetch bookings for this user
-    const [bookings] = await pool.query(
-      'SELECT category, services, event_date AS date FROM bookings WHERE user_id = ? ORDER BY event_date DESC',
-      [userId]
-    );
+    // Step 2: Use the userId to find relevant bookings
+    const [bookings] = await pool.query('SELECT * FROM bookings WHERE user_id = ?', [userId]);
 
-    // Step 3: Format services from JSON string to array
-    const formatted = bookings.map(row => {
+    // Step 3: Return the booking data to the frontend
+    res.json({ bookings });
+  } catch (error) {
+    console.error('Fetch bookings error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
+app.get("/api/bookings/:email", (req, res) => {
+  const email = req.params.email;
+
+  const sql = `
+    SELECT b.category, b.services, b.date
+    FROM bookings b
+    INNER JOIN users u ON u.id = b.user_id
+    WHERE u.email = ?
+    ORDER BY b.date DESC
+  `;
+
+  db.query(sql, [email], (err, result) => {
+    if (err) {
+      console.error("Query error:", err);
+      return res.status(500).json({ error: "Database query failed" });
+    }
+
+    if (result.length === 0) {
+      return res.status(200).json({ bookings: [] });
+    }
+
+    const formatted = result.map(row => {
       let servicesList = [];
       try {
+        // If stored as JSON array
         servicesList = JSON.parse(row.services);
       } catch {
+        // If stored as normal string
         servicesList = row.services ? [row.services] : [];
       }
 
@@ -352,10 +380,7 @@ app.get('/api/bookings/:email', async (req, res) => {
     });
 
     res.status(200).json({ bookings: formatted });
-  } catch (error) {
-    console.error('Fetch bookings error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
+  });
 });
 
 app.post("/api/reviews", async (req, res) => {
@@ -665,7 +690,7 @@ app.delete("/api/adminreviews/:id", async (req, res) => {
 app.get("/api/admin/users", async (req, res) => {
   try {
     const { search } = req.query;
-    let query = "SELECT id, name, email, password, phone, address, created_at, blocked FROM users";
+    let query = "SELECT id, name, email, password, phone, address, created_at FROM users";
     const params = [];
 
     if (search) {
@@ -731,5 +756,3 @@ app.put("/api/admin/users/block/:id", async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
-
